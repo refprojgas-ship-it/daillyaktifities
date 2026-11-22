@@ -104,7 +104,7 @@ details summary{cursor:pointer;font-weight:700;margin:10px 0}
 <div id="toast" hidden></div>
 
 <script>
-var S={user:null,entries:[],storages:[],active:null,reminders:[],workouts:[],del:{},mood:{},goal:6000},cur=null,$=function(i){return document.getElementById(i)};
+var S={user:null,entries:[],storages:[],active:null,reminders:[],workouts:[],del:{},mood:{},goal:6000,noimg:{}},cur=null,$=function(i){return document.getElementById(i)};
 var MOODS=['😄','🙂','😐','😔','😡'];
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function save(){try{localStorage.setItem('dm_state',JSON.stringify(S,function(k,v){return k==='photo'?undefined:v}))}catch(e){toast('Penyimpanan lokal penuh. Hubungkan Drive atau hapus beberapa foto.')}}
@@ -188,7 +188,7 @@ function post(x,body){body.key=x.key;return fetch(x.email,{method:'POST',headers
 function sync(manual){
  var x=S.storages.filter(function(v){return v.email===S.active})[0];
  if(!x){if(manual)toast('Belum ada Drive aktif. Data tersimpan di perangkat ini.');return}
- post(x,{action:'load'}).then(function(rem){Object.assign(S.del,rem.del||{});['entries','reminders','workouts'].forEach(function(k){merge(rem[k]||[],k)});return post(x,{action:'save',data:{entries:S.entries,reminders:S.reminders,workouts:S.workouts,del:S.del}})}).then(function(){if(manual)toast('Tersinkron ke Google Drive.');if(!$('app').hidden&&!$('main').querySelector('.ed'))home()}).catch(function(e){toast(typeof e==='string'?e:'Tidak bisa terhubung ke Drive. Cek tautan, kunci, dan koneksi internet.')})}
+ post(x,{action:'load'}).then(function(rem){Object.assign(S.del,rem.del||{});var ri=rem.imgs||{};if(S.user)['photo','hero','sport','jadwal'].forEach(function(k){if(ri[k]&&!S.noimg[k]&&!(k==='photo'?S.user.photo:IMG[k])){setImg(k,ri[k]);smSet(k,ri[k]);putImg(k,ri[k]).catch(function(){})}});['entries','reminders','workouts'].forEach(function(k){merge(rem[k]||[],k)});return post(x,{action:'save',data:{entries:S.entries,reminders:S.reminders,workouts:S.workouts,del:S.del,imgs:smGet()}})}).then(function(){if(manual)toast('Tersinkron ke Google Drive.');if(!$('app').hidden&&!$('main').querySelector('.ed'))home()}).catch(function(e){toast(typeof e==='string'?e:'Tidak bisa terhubung ke Drive. Cek tautan, kunci, dan koneksi internet.')})}
 
 var IDB=null;
 function idb(){return new Promise(function(ok,no){if(!window.indexedDB)return no();if(IDB)return ok(IDB);var r=indexedDB.open('dm',1);r.onupgradeneeded=function(){r.result.createObjectStore('f')};r.onsuccess=function(){IDB=r.result;ok(IDB)};r.onerror=no})}
@@ -234,9 +234,16 @@ function av(){var u=S.user;return '<button class="avb" onclick="go(\'profil\')" 
 function bg(k){return "--im:url('"+(IMG[k]||DEF[k])+"')"}
 function foot(){return '<div class="foot"><img alt="" src="'+LOGO1+'"><img alt="" src="'+LOGO2+'"><span>Rizal Hypno Center</span></div>'}
 function quote(){return '<div class="qcard"><span class="qm">“</span><div>Catatan itu Talinya Ilmu dan Cendelanya Ingatan.<small>M. Abdur Rizal, S.Kep.,Ns.</small></div></div>'}
-function loadImgs(){var e=S.user.email;['photo','hero','sport','jadwal'].forEach(function(k){idbGet(k+':'+e).then(function(v){if(v){if(k==='photo')S.user.photo=v;else IMG[k]=v}else if(k==='photo'&&S.user.photo)idbSet('photo:'+e,S.user.photo);if(!$('main').querySelector('.ed'))home()}).catch(function(){})})}
-function pickImg(k){var i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=function(){if(!i.files[0])return;shrink(i.files[0],k==='photo'?3840:2560,function(d,w,h){if(k==='photo')S.user.photo=d;else IMG[k]=d;idbSet(k+':'+S.user.email,d).catch(function(){toast('Gambar hanya tersimpan sementara di sesi ini.')});save();home();toast('Gambar tersimpan: '+w+' x '+h+' px')},.95)};i.click()}
-function resetImg(k){if(k==='photo')S.user.photo='';else IMG[k]='';idbSet(k+':'+S.user.email,'').catch(function(){});save();home();toast('Dikembalikan ke gambar awal.')}
+function ik(k){return k+':'+(S.user.email||'').trim().toLowerCase()}
+function putImg(k,d){return Promise.all([idbSet(ik(k),d),idbSet(k+':*',d)])}
+function getImg(k){return idbGet(ik(k)).then(function(v){return v||idbGet(k+':'+S.user.email)}).then(function(v){return v||idbGet(k+':*')}).catch(function(){return ''})}
+function smGet(){try{return JSON.parse(localStorage.getItem('dm_sm')||'{}')}catch(e){return {}}}
+function smSet(k,d){var o=smGet();if(d)o[k]=d;else delete o[k];try{localStorage.setItem('dm_sm',JSON.stringify(o))}catch(e){}}
+function setImg(k,v){if(k==='photo')S.user.photo=v;else IMG[k]=v}
+function loadImgs(){try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+ var sm=smGet();['photo','hero','sport','jadwal'].forEach(function(k){if(S.noimg[k])return;getImg(k).then(function(v){var fb=!v;v=v||sm[k]||(k==='photo'?S.user.photo:'')||'';if(v){setImg(k,v);if(fb)putImg(k,v).catch(function(){});if(!$('main').querySelector('.ed'))home()}})})}
+function pickImg(k){var i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=function(){var f=i.files[0];if(!f)return;shrink(f,k==='photo'?3840:2560,function(d,w,h){setImg(k,d);delete S.noimg[k];putImg(k,d).catch(function(){toast('Gambar hanya tersimpan sementara di sesi ini.')});save();home();toast('Gambar tersimpan: '+w+' x '+h+' px');shrink(f,720,function(sd){smSet(k,sd);sync(false)},.7)},.95)};i.click()}
+function resetImg(k){setImg(k,'');S.noimg[k]=1;smSet(k,'');putImg(k,'').catch(function(){});save();home();toast('Dikembalikan ke gambar awal.')}
 function setMood(i){S.mood[ld(new Date())]=i;save();homeView()}
 function viewPhoto(){if(S.user.photo)modal('<img alt="Foto profil" src="'+S.user.photo+'" style="width:100%;border-radius:16px;display:block"><div class="row"><button onclick="closeM()">Tutup</button></div>')}
 var IC={book:'<path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 20a2 2 0 0 1 2-2h13v3H6a2 2 0 0 1-2-1z"/>',cal:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',dumb:'<path d="M6 7v10M3 9.5v5M18 7v10M21 9.5v5M6 12h12"/>',brush:'<path d="M5 19c3 0 4-1.5 4-3l9-10-3-3-10 9c-1.5 1-2 3 0 7z"/>',cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',back:'<path d="M15 5l-7 7 7 7"/>',arr:'<path d="M5 12h14M13 6l6 6-6 6"/>',plus:'<path d="M12 5v14M5 12h14"/>',jalan:'<path d="M8 3c2 0 3 2 3 5s-1 4-3 4-3-1-3-4 1-5 3-5zM16 11c2 0 3 2 3 5s-1 5-3 5-3-2-3-5 1-5 3-5z"/>',cepat:'<path d="M5 6l6 6-6 6M13 6l6 6-6 6"/>',jog:'<path d="M3 14c3-6 5-6 8 0s5 6 8 0"/>',lari:'<path d="M13 2L5 14h6l-1 8 8-12h-6z"/>'};
@@ -293,10 +300,11 @@ function sportView(){
  document.querySelectorAll('[data-w]').forEach(function(b){b.onclick=function(){S.del[b.dataset.w]=1;S.workouts=S.workouts.filter(function(x){return x.id!=b.dataset.w});save();sportView();sync(false)}})}
 function profilView(){
  var u=S.user;
- $('main').innerHTML='<h1 class="pt">Profil</h1><div class="pcard" onclick="viewPhoto()">'+(u.photo?'<div class="bgb" style="background-image:url(\''+u.photo+'\')"></div><img alt="Foto profil" src="'+u.photo+'">':'<div class="ph0">'+esc((u.name||'?')[0].toUpperCase())+'</div>')+'<button class="cam" onclick="event.stopPropagation();pickImg(\'photo\')" aria-label="Ganti foto profil">'+ico('cam')+'</button></div><p class="note ctr">Foto tampil utuh dan disimpan hingga 4K. Ketuk untuk memperbesar.</p>'+
+ $('main').innerHTML='<h1 class="pt">Profil</h1><div class="pcard" onclick="viewPhoto()">'+(u.photo?'<div class="bgb" style="background-image:url(\''+u.photo+'\')"></div><img alt="Foto profil" src="'+u.photo+'">':'<div class="ph0">'+esc((u.name||'?')[0].toUpperCase())+'</div>')+'<button class="cam" onclick="event.stopPropagation();pickImg(\'photo\')" aria-label="Ganti foto profil">'+ico('cam')+'</button></div><p class="note ctr">Foto tampil utuh dan disimpan hingga 4K. Ketuk untuk memperbesar.</p><p class="note ctr" id="pst"></p>'+
  '<div class="card2"><label class="note" for="pn">Nama</label><input type="text" id="pn" value="'+esc(u.name)+'" style="margin:4px 0"><p class="note">'+esc(u.email)+'</p><button class="pri" id="pnb">Simpan nama</button></div>'+
  '<div class="card2"><h3>Gambar tampilan</h3><p class="note">Ganti sesuai seleranmu. Kualitas tinggi tersimpan di perangkat ini.</p>'+[['photo','Foto profil',u.photo||DEF.sport],['hero','Gambar beranda',IMG.hero||DEF.hero],['sport','Gambar olahraga',IMG.sport||DEF.sport],['jadwal','Gambar jadwal',IMG.jadwal||DEF.jadwal]].map(function(x){return '<div class="item"><img class="th" alt="" src="'+x[2]+'"><div class="grow"><b>'+x[1]+'</b></div><button data-p="'+x[0]+'">Ganti</button><button class="ic" data-q="'+x[0]+'" aria-label="Kembalikan gambar awal">↺</button></div>'}).join('')+'</div>'+
  '<div class="card2"><h3>Penyimpanan dan data</h3><div class="row"><button class="pri" onclick="openStorage()">Penyimpanan Drive</button><button onclick="sync(true)">Sinkron sekarang</button><button onclick="logout()">Keluar</button></div></div>'+foot();
+ if(navigator.storage&&navigator.storage.persisted)navigator.storage.persisted().then(function(p){var e=$('pst');if(e)e.textContent=p?'Penyimpanan gambar: permanen di perangkat ini ✓':'Browser belum menjamin gambar tersimpan permanen. Hubungkan Drive agar gambar ikut tercadangkan.'});
  $('pnb').onclick=function(){S.user.name=$('pn').value.trim()||S.user.name;save();profilView();toast('Nama disimpan.')};
  document.querySelectorAll('[data-p]').forEach(function(b){b.onclick=function(){pickImg(b.dataset.p)}});
  document.querySelectorAll('[data-q]').forEach(function(b){b.onclick=function(){resetImg(b.dataset.q)}})}
